@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>5" Display - Hardware Mode</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #fff;
+            color: #000;
+            overflow: hidden;
+            width: 800px;
+            height: 480px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Top section - Track visualization */
+        .track-section {
+            flex: 1;
+            background: #fff;
+            border: 3px solid #000;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #track-canvas {
+            width: 100%;
+            height: 100%;
+            background: #fff;
+        }
+        
+        /* Fuel indicator - top right corner */
+        .fuel-indicator {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #000;
+            padding: 8px 15px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #000;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        /* Bottom section - Data boxes */
+        .data-section {
+            height: 80px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 3px;
+            background: #fff;
+            border: 3px solid #000;
+            border-top: none;
+        }
+        
+        .data-box {
+            background: #fff;
+            border: 2px solid #000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 5px;
+        }
+        
+        .data-box.highlight {
+            border-color: #0a0;
+            background: rgba(0, 200, 0, 0.1);
+        }
+        
+        .data-label {
+            font-size: 11px;
+            color: #000;
+            opacity: 0.7;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .data-value {
+            font-size: 28px;
+            color: #000;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .data-value.large {
+            font-size: 32px;
+        }
+        
+        .data-unit {
+            font-size: 10px;
+            color: #000;
+            opacity: 0.6;
+            margin-top: -2px;
+        }
+        
+        /* Lap count special styling */
+        .lap-count {
+            border-color: #00a;
+        }
+        
+        .lap-count .data-value {
+            color: #00a;
+        }
+        
+        .lap-count .data-label {
+            color: #00a;
+        }
+        
+        /* Pulsing animation for active data */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .data-box.active {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <!-- Track visualization section -->
+    <div class="track-section">
+        <canvas id="track-canvas"></canvas>
+        <div class="fuel-indicator" id="fuel">Fuel: 100%</div>
+    </div>
+    
+    <!-- Data boxes section -->
+    <div class="data-section">
+        <div class="data-box highlight active">
+            <div class="data-label">Velocity</div>
+            <div class="data-value large" id="velocity">0</div>
+            <div class="data-unit">km/h</div>
+        </div>
+        
+        <div class="data-box lap-count">
+            <div class="data-label">Lap</div>
+            <div class="data-value" id="lap-count">0</div>
+            <div class="data-unit">count</div>
+        </div>
+        
+        <div class="data-box">
+            <div class="data-label">Lap Dist</div>
+            <div class="data-value" id="lap-distance">0</div>
+            <div class="data-unit">m</div>
+        </div>
+        
+        <div class="data-box">
+            <div class="data-label">Total</div>
+            <div class="data-value" id="total-distance">0</div>
+            <div class="data-unit">m</div>
+        </div>
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('track-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let pathPoints = [];
+        let currentPos = {x: 0, y: 0};
+        let lapCount = 0;
+        let isConnected = false;
+        let steeringAngles = []; // Store steering angles for coloring
+        
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawTrack(); // Redraw after resize
+        }
+        
+        resizeCanvas();
+        
+        // Draw initial empty state immediately
+        drawTrack();
+        
+        // Connect WebSocket
+        let ws;
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                isConnected = true;
+                console.log('Connected to server');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                // Update velocity (convert m/s to km/h)
+                const velocityKmh = data.velocity * 3.6;
+                document.getElementById('velocity').textContent = Math.round(velocityKmh);
+                
+                // Update lap count
+                document.getElementById('lap-count').textContent = data.laps_completed;
+                lapCount = data.laps_completed;
+                
+                // Use reference lap distance if available (after first lap)
+                if (data.reference_lap_distance > 0) {
+                    document.getElementById('lap-distance').textContent = Math.round(data.reference_lap_distance);
+                } else {
+                    document.getElementById('lap-distance').textContent = Math.round(data.current_lap_distance);
+                }
+                
+                // Update total distance
+                document.getElementById('total-distance').textContent = Math.round(data.total_distance);
+                
+                // Update fuel (placeholder - you can connect real fuel sensor)
+                const fuelPercent = Math.max(0, 100 - (data.total_distance / 10));
+                document.getElementById('fuel').textContent = `Fuel: ${Math.round(fuelPercent)}%`;
+                
+                // Update track visualization
+                currentPos = {x: data.x, y: data.y};
+                pathPoints = data.path_points || [];
+                
+                // Calculate steering angles from path curvature
+                steeringAngles = calculateSteeringAngles(pathPoints);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                isConnected = false;
+            };
+            
+            ws.onclose = () => {
+                isConnected = false;
+                console.log('Disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+        
+        // Start connection
+        connectWebSocket();
+        
+        // Calculate steering angles from path curvature
+        function calculateSteeringAngles(points) {
+            if (points.length < 3) return [];
+            
+            const angles = [];
+            for (let i = 1; i < points.length - 1; i++) {
+                const p1 = points[i - 1];
+                const p2 = points[i];
+                const p3 = points[i + 1];
+                
+                // Calculate vectors
+                const v1x = p2.x - p1.x;
+                const v1y = p2.y - p1.y;
+                const v2x = p3.x - p2.x;
+                const v2y = p3.y - p2.y;
+                
+                // Calculate angle between vectors (curvature)
+                const angle1 = Math.atan2(v1y, v1x);
+                const angle2 = Math.atan2(v2y, v2x);
+                let angleDiff = angle2 - angle1;
+                
+                // Normalize to [-PI, PI]
+                while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+                while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+                
+                angles.push(Math.abs(angleDiff));
+            }
+            
+            return angles;
+        }
+        
+        // Get color based on steering angle
+        function getColorForSteering(angle) {
+            // angle in radians (0 = straight, higher = sharper turn)
+            // 0-0.1 rad: Green (straight)
+            // 0.1-0.3 rad: Yellow (medium turn)
+            // 0.3+ rad: Red (sharp turn)
+            
+            if (angle < 0.1) {
+                return '#00ff00'; // Green - straight
+            } else if (angle < 0.3) {
+                // Transition from green to yellow to red
+                const t = (angle - 0.1) / 0.2; // 0 to 1
+                const r = Math.round(255 * t);
+                const g = 255;
+                const b = 0;
+                return `rgb(${r}, ${g}, ${b})`;
+            } else {
+                // Transition from yellow to red
+                const t = Math.min((angle - 0.3) / 0.3, 1); // 0 to 1
+                const r = 255;
+                const g = Math.round(255 * (1 - t));
+                const b = 0;
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+        }
+        
+        function drawTrack() {
+            // Clear canvas with white background
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (pathPoints.length < 2) {
+                // Show "Waiting for data..." message
+                ctx.fillStyle = '#000';
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Waiting for track data...', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+            
+            // Calculate bounds
+            const xs = pathPoints.map(p => p.x);
+            const ys = pathPoints.map(p => p.y);
+            const minX = Math.min(...xs, 0);
+            const maxX = Math.max(...xs, 0);
+            const minY = Math.min(...ys, 0);
+            const maxY = Math.max(...ys, 0);
+            
+            const rangeX = maxX - minX || 1;
+            const rangeY = maxY - minY || 1;
+            const padding = 30;
+            const scaleX = (canvas.width - 2 * padding) / rangeX;
+            const scaleY = (canvas.height - 2 * padding) / rangeY;
+            const scale = Math.min(scaleX, scaleY, 15);
+            
+            const offsetX = canvas.width / 2 - (minX + maxX) / 2 * scale;
+            const offsetY = canvas.height / 2 + (minY + maxY) / 2 * scale;
+            
+            // Draw start point
+            ctx.fillStyle = '#00aa00';
+            ctx.beginPath();
+            ctx.arc(offsetX, offsetY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Draw path with color based on steering angle
+            if (pathPoints.length > 1) {
+                for (let i = 0; i < pathPoints.length - 1; i++) {
+                    // Get steering angle for this segment
+                    const angle = steeringAngles[i] || 0;
+                    const color = getColorForSteering(angle);
+                    
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 4;
+                    
+                    const x1 = offsetX + pathPoints[i].x * scale;
+                    const y1 = offsetY - pathPoints[i].y * scale;
+                    const x2 = offsetX + pathPoints[i + 1].x * scale;
+                    const y2 = offsetY - pathPoints[i + 1].y * scale;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw current position (pulsing)
+            const x = offsetX + currentPos.x * scale;
+            const y = offsetY - currentPos.y * scale;
+            
+            const pulseSize = 10 + Math.sin(Date.now() / 150) * 3;
+            
+            // Outer glow
+            ctx.fillStyle = 'rgba(255, 100, 0, 0.3)';
+            ctx.beginPath();
+            ctx.arc(x, y, pulseSize + 5, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Inner circle
+            ctx.fillStyle = '#ff6600';
+            ctx.beginPath();
+            ctx.arc(x, y, pulseSize, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Center dot
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // Animation loop for smooth pulsing (60 FPS)
+        setInterval(drawTrack, 16);
+    </script>
+</body>
+</html>

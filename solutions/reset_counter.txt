@@ -1,0 +1,50 @@
+Dead Reckoning DOES Accumulate Error ⚠️
+The Problem:
+Dead reckoning errors accumulate over time because:
+
+Sensor noise (small errors in steering angle, RPM)
+Wheel slip (wheels spin but vehicle doesn't move exactly)
+Timing variations (small dt errors)
+Rounding errors (floating point math)
+Error Growth Example:
+Lap 1:  Error = 0.5m   ✓ Good
+Lap 2:  Error = 1.2m   ✓ Okay
+Lap 5:  Error = 3.5m   ⚠️ Getting worse
+Lap 10: Error = 8.0m   ❌ Bad
+Lap 20: Error = 18.0m  ❌ Very bad
+Lap 50: Error = 50.0m  ❌ Unusable!
+Your Idea: Reset at Each Lap ✅
+This is SMART! But we need to be careful HOW we reset.
+
+Option 1: Hard Reset (What You Suggested)
+# When lap completes:
+if lap_completed:
+    self.position = np.array([0.0, 0.0])  # Reset to origin
+    self.heading = INITIAL_HEADING
+Problem: This loses the actual position! If you're not exactly at (0,0), you'll "teleport" back.
+
+Option 2: Soft Reset (Better!)
+# When lap completes:
+if lap_completed:
+    # Store the error
+    error_x = self.position[0] - 0.0  # How far from origin
+    error_y = self.position[1] - 0.0
+    
+    # Reset position but keep track of drift
+    self.position = np.array([0.0, 0.0])
+    self.cumulative_error += np.sqrt(error_x**2 + error_y**2)
+    
+    print(f"Lap {laps} error: {np.sqrt(error_x**2 + error_y**2):.2f}m")
+Option 3: Drift Correction (Best!)
+# When lap completes:
+if lap_completed:
+    # Calculate drift per lap
+    drift_x = self.position[0] - 0.0
+    drift_y = self.position[1] - 0.0
+    
+    # Apply correction factor to future calculations
+    self.drift_correction_x = drift_x / self.lap_counter.current_lap_distance
+    self.drift_correction_y = drift_y / self.lap_counter.current_lap_distance
+    
+    # Reset position
+    self.position = np.array([0.0, 0.0])

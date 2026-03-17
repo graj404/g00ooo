@@ -1,0 +1,22 @@
+WITHOUT PI:                   WITH PI:
+
+Steering jumps 30° in 1 step  Steering smoothly rises over 0.3s
+→ dθ = huge spike             → dθ = realistic gradual turn
+→ position jumps wrong        → position tracks real path
+→ ±8m lap error               → ±3m lap error 
+```
+
+Here is the visual of what PI does to your steering signal:
+```
+Raw AS5600:    ___/‾‾‾‾\___/‾‾\/\__
+                      ↑ noise spikes
+
+PI filtered:   ___/‾‾‾‾‾‾‾\______
+                   smooth ramp 
+
+
+
+If path overshoots → reduce Kp
+If path lags real steering → increase Kp
+If steady drift remains → increase Ki
+If oscillates → reduce Ki

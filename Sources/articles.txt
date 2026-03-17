@@ -1,0 +1,8 @@
+About dead reckoning
+
+1. lowcost DR in flights
+https://www.researchgate.net/profile/Jd-Powell-2/publication/228696978_Design_and_Performance_Analysis_of_a_Low-Cost_Aided_Dead_Reckoning_Navigator/links/00b4953bdeed11452b000000/Design-and-Performance-Analysis-of-a-Low-Cost-Aided-Dead-Reckoning-Navigator.pdf
+
+2. Comparing Dead Reckoning Algorithms for Distributed Car Simulations
+https://dl.acm.org/doi/pdf/10.1145/3200921.3200939
+

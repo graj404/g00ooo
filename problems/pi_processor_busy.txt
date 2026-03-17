@@ -1,0 +1,17 @@
+Raspberry Pi is NOT a real-time OS:
+
+  Actual pulse at   t = 100.0ms
+  Pi reads pulse at t = 103.7ms  ← OS was busy
+                        ↑
+                    3.7ms late reading
+                    → wrong speed calculated
+                    → position error builds up
+
+Even WITHOUT screen updates:
+
+  Pi OS is still doing:
+  → File system operations
+  → Memory management
+  → Python garbage collection
+  → USB polling (HB100 +  PZEM)
+  → I2C bus for AS5600

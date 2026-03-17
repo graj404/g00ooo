@@ -1,0 +1,9 @@
+we assume . Steering Ratio = 5:1 (fixed)
+
+Reality:
+  Steering rack has mechanical play (backlash)
+  Ratio changes slightly at extreme angles
+  Worn tie rods → ratio drifts over time
+
+  2% ratio error → 1° heading error per corner
+  × 8 corners per lap × 50 laps = large drift
