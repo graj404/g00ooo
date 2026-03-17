@@ -36,9 +36,8 @@ class HallEffectSensor:
                 self.pin,
                 GPIO.FALLING,
                 callback=self._pulse_interrupt,
-                bouncetime=1  # 1ms debounce
+                bouncetime=1
             )
-            print(f"Hall sensor using HARDWARE INTERRUPT on GPIO {self.pin} ✅")
         else:
             print("Hall sensor in simulation mode (no hardware)")
     
@@ -165,7 +164,6 @@ class AS5600Encoder:
         """Set current position as zero reference"""
         raw = self.read_raw_angle()
         self.zero_offset = (raw / 4096.0) * 2.0 * np.pi
-        print(f"AS5600 calibrated. Zero offset: {self.zero_offset:.4f} rad")
     
     def cleanup(self):
         if self.bus:

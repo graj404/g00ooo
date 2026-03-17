@@ -136,21 +136,11 @@ class PISteeringObserver:
         self.filtered_readings.clear()
     
     def tune(self, kp=None, ki=None):
-        """
-        Adjust filter parameters on the fly
-        
-        Tuning guide:
-        - Path overshoots turns → reduce Kp
-        - Path lags behind real steering → increase Kp
-        - Steady drift remains → increase Ki
-        - Oscillates/wobbles → reduce Ki
-        """
+        """Adjust filter parameters on the fly"""
         if kp is not None:
             self.kp = kp
         if ki is not None:
             self.ki = ki
-        
-        print(f"PI filter tuned: Kp={self.kp:.2f}, Ki={self.ki:.3f}")
 
 
 class PIVelocityObserver:

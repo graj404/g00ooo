@@ -78,13 +78,9 @@ class LapCounter:
                     self._learn_reference_path()
                     self.reference_lap_distance = self.current_lap_distance
                     self.reference_learned = True
-                    print(f"Reference path learned: {len(self.reference_path)} points")
-                    print(f"Track length: {self.reference_lap_distance:.2f}m")
                 
                 self.laps_completed += 1
                 lap_just_completed = True
-                print(f"Lap {self.laps_completed} completed! Distance: {self.current_lap_distance:.2f}m "
-                      f"{'(OPPOSITE DIRECTION)' if is_opposite_direction else ''}")
                 
                 # Reset lap distance
                 self.current_lap_distance = 0.0
@@ -168,10 +164,8 @@ class LapCounter:
         self.left_start_zone = False
         self.position_history.clear()
         self.approach_vectors.clear()
-        print("Lap counter reset")
     
     def set_start_position(self, position):
         """Set new start position"""
         self.start_position = position.copy()
         self.last_position = position.copy()
-        print(f"Start position set to: ({position[0]:.2f}, {position[1]:.2f})")

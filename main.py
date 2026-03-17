@@ -56,7 +56,6 @@ class DeadReckoningSystem:
                 ki=PI_KI,
                 max_steering_rate_deg_s=MAX_STEERING_RATE_DEG_S
             )
-            print(f"PI Steering Filter enabled: Kp={PI_KP}, Ki={PI_KI}")
         
         self.enable_velocity_filter = ENABLE_VELOCITY_FILTER
         if self.enable_velocity_filter:
@@ -64,7 +63,6 @@ class DeadReckoningSystem:
                 kp=VELOCITY_KP,
                 ki=VELOCITY_KI
             )
-            print(f"PI Velocity Filter enabled: Kp={VELOCITY_KP}, Ki={VELOCITY_KI}")
         
         # Timing
         self.dt = 1.0 / UPDATE_RATE_HZ
@@ -131,21 +129,8 @@ class DeadReckoningSystem:
             self.lap_errors.append(error_distance)
             self.cumulative_error += error_distance
             
-            avg_error = np.mean(self.lap_errors) if self.lap_errors else 0.0
-            
-            print(f"\n{'='*50}")
-            print(f"LAP {laps} COMPLETED - ERROR ANALYSIS")
-            print(f"{'='*50}")
-            print(f"Position error: {error_distance:.3f} m")
-            print(f"Average error per lap: {avg_error:.3f} m")
-            print(f"Cumulative error: {self.cumulative_error:.3f} m")
-            print(f"Error percentage: {(error_distance/lap_dist)*100:.2f}%")
-            print(f"Resetting position to origin...")
-            print(f"{'='*50}\n")
-            
             # Reset position to origin to prevent error accumulation
             self.position = np.array([0.0, 0.0], dtype=np.float64)
-            # Note: We keep heading as-is (don't reset heading)
         
         # Read fuel level (placeholder - implement based on your sensor)
         fuel_level = self._read_fuel_level()
@@ -284,13 +269,10 @@ class DeadReckoningSystem:
         """Reset position and heading"""
         self.position = np.array([x, y], dtype=np.float64)
         self.heading = heading
-        print(f"Position reset to: ({x:.2f}, {y:.2f}), heading: {np.degrees(heading):.1f}°")
     
     def calibrate_sensors(self):
         """Calibrate sensors (call when vehicle is straight)"""
-        print("Calibrating sensors...")
         self.steering_encoder.calibrate_zero()
-        print("Calibration complete.")
     
     def cleanup(self):
         """Clean up resources"""
@@ -300,7 +282,6 @@ class DeadReckoningSystem:
 
 def signal_handler(sig, frame):
     """Handle Ctrl+C gracefully"""
-    print("\nShutting down...")
     if 'dr_system' in globals():
         dr_system.cleanup()
     sys.exit(0)
@@ -308,10 +289,6 @@ def signal_handler(sig, frame):
 
 def main():
     global dr_system
-    
-    print("=" * 50)
-    print("Dead Reckoning System - Vehicle Path Mapping")
-    print("=" * 50)
     
     # Setup signal handler
     signal.signal(signal.SIGINT, signal_handler)
@@ -323,13 +300,6 @@ def main():
     input("Position vehicle straight ahead, then press Enter to calibrate...")
     dr_system.calibrate_sensors()
     
-    print(f"\nStarting dead reckoning at {UPDATE_RATE_HZ} Hz")
-    if ENABLE_DASHBOARD:
-        print(f"Dashboard: http://localhost:{DASHBOARD_PORT}")
-        print(f"Dashboard update rate: {DASHBOARD_UPDATE_RATE_HZ} Hz (every {1.0/DASHBOARD_UPDATE_RATE_HZ:.1f}s)")
-        print("Note: Slow dashboard updates don't affect sensor accuracy!")
-    print("Press Ctrl+C to stop\n")
-    
     # Start web dashboard in separate thread (if enabled)
     if ENABLE_DASHBOARD:
         dashboard_thread = threading.Thread(
@@ -338,7 +308,7 @@ def main():
             daemon=True
         )
         dashboard_thread.start()
-        time.sleep(2)  # Give dashboard time to start
+        time.sleep(2)
     
     # Main sensor loop (fast - 100 Hz)
     loop_count = 0
@@ -363,10 +333,6 @@ def main():
                 x, y = position
                 heading_deg = np.degrees(heading)
                 lap_info = dr_system.lap_counter.get_lap_info()
-                print(f"Pos: ({x:7.2f}, {y:7.2f}) m | "
-                      f"Heading: {heading_deg:6.1f}° | "
-                      f"Velocity: {velocity:5.2f} m/s | "
-                      f"Laps: {laps}")
             
             # Sleep to maintain update rate
             time.sleep(dr_system.dt)
@@ -375,35 +341,6 @@ def main():
         pass
     finally:
         dr_system.cleanup()
-        
-        # Print final error statistics
-        if ENABLE_LAP_RESET:
-            stats = dr_system.get_error_statistics()
-            print(f"\n{'='*50}")
-            print(f"FINAL ERROR STATISTICS")
-            print(f"{'='*50}")
-            print(f"Total laps: {stats['num_laps']}")
-            if stats['num_laps'] > 0:
-                print(f"Average error per lap: {stats['avg_error']:.3f} m")
-                print(f"Maximum error: {stats['max_error']:.3f} m")
-                print(f"Minimum error: {stats['min_error']:.3f} m")
-                print(f"Cumulative error: {stats['cumulative_error']:.3f} m")
-                print(f"\nError per lap: {[f'{e:.2f}m' for e in stats['error_list']]}")
-            print(f"{'='*50}\n")
-        
-        # Print PI filter statistics
-        if ENABLE_PI_FILTER and dr_system.enable_pi_filter:
-            pi_stats = dr_system.pi_steering.get_statistics()
-            print(f"\n{'='*50}")
-            print(f"PI FILTER PERFORMANCE")
-            print(f"{'='*50}")
-            print(f"Raw sensor noise: {np.degrees(pi_stats['raw_noise']):.3f}°")
-            print(f"Filtered noise: {np.degrees(pi_stats['filtered_noise']):.3f}°")
-            print(f"Noise reduction: {pi_stats['noise_reduction']:.1f}%")
-            print(f"Final integral error: {pi_stats['integral_error']:.3f}°")
-            print(f"{'='*50}\n")
-        
-        print(f"Path data saved to: {LOG_FILE}")
 
 
 if __name__ == "__main__":

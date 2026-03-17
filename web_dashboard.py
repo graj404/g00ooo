@@ -259,9 +259,6 @@ async def websocket_endpoint(websocket: WebSocket):
 def start_dashboard(host='0.0.0.0', port=5000):
     """Start the web dashboard server"""
     import uvicorn
-    print(f"\n{'='*50}")
-    print(f"Hardware Dashboard: http://{host}:{port}")
-    print(f"{'='*50}\n")
     uvicorn.run(app, host=host, port=port, log_level="error")
 
 
