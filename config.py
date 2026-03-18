@@ -1,9 +1,10 @@
 # Configuration for Dead Reckoning System
 
 # Hardware Configuration
-MAGNETS_PER_REVOLUTION = 4  # 360/20 = 18 magnets
-WHEEL_DIAMETER_M = 0.275  # Wheel diameter in meters (adjust to your vehicle)
+MAGNETS_PER_REVOLUTION = 1  # Number of pulses per wheel revolution (1 for single reflector/IR sensor)
+WHEEL_DIAMETER_M = 0.275  # Wheel diameter in meters (27.5cm from your code)
 WHEEL_CIRCUMFERENCE_M = WHEEL_DIAMETER_M * 3.14159265359
+WHEEL_BASE_M = 1.2  # Distance between front and rear axles in meters
 
 # Sensor Pins (adjust to your wiring)
 IR_SENSOR_PIN = 27  # GPIO pin for IR sensor

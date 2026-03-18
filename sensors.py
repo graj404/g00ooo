@@ -6,7 +6,7 @@ try:
     import adafruit_ads1x15.ads1115 as ADS
     from adafruit_ads1x15.analog_in import AnalogIn
     from gpiozero import DigitalInputDevice
-    import smbus2
+    from smbus2 import SMBus
     RPI_AVAILABLE = True
 except ImportError:
     RPI_AVAILABLE = False
@@ -117,22 +117,26 @@ class IRSensor:
 
 
 class AS5600Encoder:
-    """AS5600 Magnetic Encoder for Steering Angle Sensor"""
+    """AS5600 Magnetic Encoder for Steering Angle Sensor using smbus2"""
     
-    # AS5600 Register addresses
-    REG_RAW_ANGLE_H = 0x0C
-    REG_RAW_ANGLE_L = 0x0D
-    REG_ANGLE_H = 0x0E
-    REG_ANGLE_L = 0x0F
+    # AS5600 Register address for raw angle
+    REG_RAW_ANGLE = 0x0C
     
     def __init__(self, i2c_address=AS5600_I2C_ADDRESS, bus_number=1):
         self.address = i2c_address
         self.zero_offset = 0.0
+        self.angle_degrees = 0.0
         
         if RPI_AVAILABLE:
-            self.bus = smbus2.SMBus(bus_number)
+            try:
+                self.bus = SMBus(bus_number)
+                print(f"AS5600 initialized at address 0x{i2c_address:02X}")
+            except Exception as e:
+                print(f"Error initializing AS5600: {e}")
+                self.bus = None
         else:
             self.bus = None
+            print("AS5600 in simulation mode")
     
     def read_raw_angle(self):
         """Read raw angle from AS5600 (0-4095 for 0-360 degrees)"""
@@ -140,19 +144,33 @@ class AS5600Encoder:
             return 0
         
         try:
-            high = self.bus.read_byte_data(self.address, self.REG_RAW_ANGLE_H)
-            low = self.bus.read_byte_data(self.address, self.REG_RAW_ANGLE_L)
-            raw_angle = (high << 8) | low
+            # Read 2 bytes starting from register 0x0C
+            data = self.bus.read_i2c_block_data(self.address, self.REG_RAW_ANGLE, 2)
+            raw_angle = (data[0] << 8) | data[1]
             return raw_angle
         except Exception as e:
             print(f"Error reading AS5600: {e}")
             return 0
     
+    def get_angle_degrees(self):
+        """Get steering angle in degrees (0-360)"""
+        raw = self.read_raw_angle()
+        # Convert 12-bit value (0-4095) to degrees (0-360)
+        self.angle_degrees = (raw / 4096.0) * 360.0 - self.zero_offset
+        
+        # Normalize to [0, 360]
+        while self.angle_degrees < 0:
+            self.angle_degrees += 360.0
+        while self.angle_degrees >= 360:
+            self.angle_degrees -= 360.0
+        
+        return self.angle_degrees
+    
     def get_angle_radians(self):
         """Get steering angle in radians"""
-        raw = self.read_raw_angle()
-        # Convert 12-bit value (0-4095) to radians (0-2π)
-        angle_rad = (raw / 4096.0) * 2.0 * np.pi - self.zero_offset
+        degrees = self.get_angle_degrees()
+        # Convert to radians and normalize to [-π, π]
+        angle_rad = np.radians(degrees)
         
         # Normalize to [-π, π]
         while angle_rad > np.pi:
@@ -165,7 +183,8 @@ class AS5600Encoder:
     def calibrate_zero(self):
         """Set current position as zero reference"""
         raw = self.read_raw_angle()
-        self.zero_offset = (raw / 4096.0) * 2.0 * np.pi
+        self.zero_offset = (raw / 4096.0) * 360.0
+        print(f"AS5600 calibrated: zero offset = {self.zero_offset:.2f}°")
     
     def cleanup(self):
         if self.bus:
@@ -188,20 +207,16 @@ class FuelSensor:
         if RPI_AVAILABLE:
             try:
                 # Initialize I2C and ADS1115
+                import board
+                import busio
+                import adafruit_ads1x15.ads1115 as ADS
+                from adafruit_ads1x15.analog_in import AnalogIn
+                
                 i2c = busio.I2C(board.SCL, board.SDA)
                 ads = ADS.ADS1115(i2c)
                 
-                # Create analog input channel
-                if channel == 0:
-                    self.chan = AnalogIn(ads, ADS.P0)
-                elif channel == 1:
-                    self.chan = AnalogIn(ads, ADS.P1)
-                elif channel == 2:
-                    self.chan = AnalogIn(ads, ADS.P2)
-                elif channel == 3:
-                    self.chan = AnalogIn(ads, ADS.P3)
-                else:
-                    raise ValueError(f"Invalid ADC channel: {channel}")
+                # Create analog input channel using correct syntax
+                self.chan = AnalogIn(ads, channel)
                 
                 print(f"Fuel sensor initialized on ADC channel {channel}")
             except Exception as e:
