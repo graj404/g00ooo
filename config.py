@@ -2,13 +2,17 @@
 
 # Hardware Configuration
 MAGNETS_PER_REVOLUTION = 4  # 360/20 = 18 magnets
-WHEEL_DIAMETER_M = 0.2  # Wheel diameter in meters (adjust to your vehicle)
+WHEEL_DIAMETER_M = 0.275  # Wheel diameter in meters (adjust to your vehicle)
 WHEEL_CIRCUMFERENCE_M = WHEEL_DIAMETER_M * 3.14159265359
 
 # Sensor Pins (adjust to your wiring)
-HALL_SENSOR_PIN = 17  # GPIO pin for AS314 hall effect sensor
+IR_SENSOR_PIN = 27  # GPIO pin for IR sensor
 AS5600_I2C_ADDRESS = 0x36  # Default I2C address for AS5600
-FUEL_SENSOR_PIN = 27  # GPIO pin for fuel level sensor (analog via ADC)
+
+# Fuel Sensor Configuration (ADS1115 ADC)
+FUEL_ADC_CHANNEL = 0  # ADC channel (0-3) for fuel sensor
+MIN_FUEL_VOLTAGE = 0.04  # Voltage at empty tank
+MAX_FUEL_VOLTAGE = 0.7   # Voltage at full tank
 
 # Dead Reckoning Parameters
 # Update rate: How many times per second we calculate position

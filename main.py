@@ -10,7 +10,7 @@ import numpy as np
 import signal
 import sys
 import threading
-from sensors import HallEffectSensor, AS5600Encoder
+from sensors import IRSensor, AS5600Encoder, FuelSensor
 from lap_counter import LapCounter
 from pi_filter import PISteeringObserver, PIVelocityObserver
 from web_dashboard import start_dashboard, update_vehicle_state
@@ -30,8 +30,9 @@ class DeadReckoningSystem:
     
     def __init__(self):
         # Initialize sensors
-        self.hall_sensor = HallEffectSensor()
+        self.ir_sensor = IRSensor()
         self.steering_encoder = AS5600Encoder()
+        self.fuel_sensor = FuelSensor()
         
         # State variables (using numpy for fast computation)
         self.position = np.array([INITIAL_X, INITIAL_Y], dtype=np.float64)
@@ -85,7 +86,7 @@ class DeadReckoningSystem:
         self.last_update = current_time
         
         # Read sensors
-        self.rpm = self.hall_sensor.get_rpm()
+        self.rpm = self.ir_sensor.get_rpm()
         raw_steering_angle = self.steering_encoder.get_angle_radians()
         
         # Apply PI filter to steering angle (reduces error by ~50%)
@@ -94,12 +95,8 @@ class DeadReckoningSystem:
         else:
             self.steering_angle = raw_steering_angle
         
-        # Calculate velocity from RPM (using hardware interrupt timing)
-        # Option 1: Traditional RPM → velocity
+        # Calculate velocity from RPM
         raw_velocity = (self.rpm / 60.0) * WHEEL_CIRCUMFERENCE_M
-        
-        # Option 2: Direct velocity from pulse intervals (more accurate)
-        # raw_velocity = self.hall_sensor.get_velocity_direct(WHEEL_CIRCUMFERENCE_M)
         
         # Apply PI filter to velocity (optional)
         if self.enable_velocity_filter:
@@ -132,8 +129,8 @@ class DeadReckoningSystem:
             # Reset position to origin to prevent error accumulation
             self.position = np.array([0.0, 0.0], dtype=np.float64)
         
-        # Read fuel level (placeholder - implement based on your sensor)
-        fuel_level = self._read_fuel_level()
+        # Read fuel level from ADC sensor
+        fuel_level = self.fuel_sensor.read_fuel_level()
         
         # Update web dashboard (minimal: only position, laps, fuel)
         if ENABLE_DASHBOARD:
@@ -231,24 +228,7 @@ class DeadReckoningSystem:
             'error_list': self.lap_errors
         }
     
-    def _read_fuel_level(self):
-        """
-        Read fuel level from sensor
-        Returns: fuel level as percentage (0-100)
-        
-        TODO: Implement based on your fuel sensor type:
-        - If using analog sensor: Read ADC value and convert to percentage
-        - If using digital sensor: Read GPIO pin state
-        - Example for MCP3008 ADC:
-          from spidev import SpiDev
-          spi = SpiDev()
-          spi.open(0, 0)
-          raw = spi.xfer2([1, (8 + channel) << 4, 0])
-          value = ((raw[1] & 3) << 8) + raw[2]
-          percentage = (value / 1023.0) * 100
-        """
-        # Placeholder: return 100% for now
-        return 100.0
+
     
     def _log_data(self, timestamp, laps, lap_distance):
         """Log current state to file"""
@@ -276,7 +256,7 @@ class DeadReckoningSystem:
     
     def cleanup(self):
         """Clean up resources"""
-        self.hall_sensor.cleanup()
+        self.ir_sensor.cleanup()
         self.steering_encoder.cleanup()
 
 

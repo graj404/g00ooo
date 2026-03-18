@@ -1,7 +1,11 @@
 import time
 import numpy as np
 try:
-    import RPi.GPIO as GPIO
+    import board
+    import busio
+    import adafruit_ads1x15.ads1115 as ADS
+    from adafruit_ads1x15.analog_in import AnalogIn
+    from gpiozero import DigitalInputDevice
     import smbus2
     RPI_AVAILABLE = True
 except ImportError:
@@ -10,108 +14,106 @@ except ImportError:
 
 import threading
 from collections import deque
-from config import HALL_SENSOR_PIN, AS5600_I2C_ADDRESS, MAGNETS_PER_REVOLUTION
+from config import IR_SENSOR_PIN, AS5600_I2C_ADDRESS, MAGNETS_PER_REVOLUTION, FUEL_ADC_CHANNEL, MIN_FUEL_VOLTAGE, MAX_FUEL_VOLTAGE
 
 
-class HallEffectSensor:
+class IRSensor:
     """
-    AS314 Hall Effect Sensor for RPM measurement
-    Uses HARDWARE INTERRUPT for precise timing (not polling!)
+    IR Sensor for RPM measurement using gpiozero
+    Counts pulses to calculate RPS/RPM
     """
     
-    def __init__(self, pin=HALL_SENSOR_PIN):
+    def __init__(self, pin=IR_SENSOR_PIN):
         self.pin = pin
         self.rpm = 0.0
+        self.rps = 0.0
+        self.count = 0
+        self.last_state = 0
         
-        # Hardware interrupt timing (nanosecond precision)
-        self.pulse_times = deque(maxlen=50)  # Store last 50 pulse timestamps
+        # Timing for RPS calculation
+        self.pulse_times = deque(maxlen=50)
         self.lock = threading.Lock()
         
         if RPI_AVAILABLE:
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            # Use gpiozero for IR sensor
+            self.sensor = DigitalInputDevice(self.pin, pull_up=False)
             
-            # ✅ HARDWARE INTERRUPT - captures pulse INSTANTLY
-            GPIO.add_event_detect(
-                self.pin,
-                GPIO.FALLING,
-                callback=self._pulse_interrupt,
-                bouncetime=1
-            )
+            # Start counting thread
+            self.running = True
+            self.counter_thread = threading.Thread(target=self._count_pulses, daemon=True)
+            self.counter_thread.start()
         else:
-            print("Hall sensor in simulation mode (no hardware)")
+            print("IR sensor in simulation mode (no hardware)")
+            self.sensor = None
     
-    def _pulse_interrupt(self, channel):
+    def _count_pulses(self):
         """
-        Hardware interrupt callback - fires INSTANTLY when pulse detected
-        This runs in interrupt context - keep it FAST!
+        Count pulses from IR sensor and calculate RPS
         """
-        timestamp = time.perf_counter()  # Captured IMMEDIATELY ✅
+        start_time = time.time()
         
-        with self.lock:
-            self.pulse_times.append(timestamp)
+        while self.running:
+            if self.sensor:
+                current_state = self.sensor.value
+                
+                # Detect rising edge
+                if current_state == 1 and self.last_state == 0:
+                    timestamp = time.perf_counter()
+                    with self.lock:
+                        self.count += 1
+                        self.pulse_times.append(timestamp)
+                
+                self.last_state = current_state
+            
+            # Calculate RPS every second
+            if time.time() - start_time >= 1.0:
+                with self.lock:
+                    self.rps = self.count
+                    self.rpm = self.rps * 60.0
+                    self.count = 0
+                start_time = time.time()
+            
+            time.sleep(0.001)  # 1ms polling
     
     def get_rpm(self):
         """
-        Calculate RPM from hardware-captured pulse timestamps
-        Uses actual time intervals between pulses (not assumed!)
+        Calculate RPM from pulse timestamps
         """
         with self.lock:
-            if len(self.pulse_times) < 2:
-                return 0.0
-            
-            # Get recent pulses
-            pulses = list(self.pulse_times)
-        
-        # Calculate intervals between consecutive pulses
-        intervals = [pulses[i+1] - pulses[i] for i in range(len(pulses)-1)]
-        
-        if not intervals:
-            return 0.0
-        
-        # Average interval for stability
-        avg_interval = sum(intervals) / len(intervals)
-        
-        if avg_interval < 0.0001:  # Sanity check (< 0.1ms is impossible)
-            return 0.0
+            return self.rpm
+    
+    def get_rps(self):
+        """Get revolutions per second"""
+        with self.lock:
+            return self.rps
+    
+    def cleanup(self):
+        """Clean up resources"""
+        self.running = False
+        if self.sensor:
+            self.sensor.close()
         
         # RPM = (1 / interval) * (60 / magnets_per_rev)
         # This is EXACT timing from hardware ✅
         self.rpm = (1.0 / avg_interval) * (60.0 / MAGNETS_PER_REVOLUTION)
         
-        return self.rpm
-    
-    def get_velocity_direct(self, wheel_circumference):
+    def get_rpm(self):
         """
-        Calculate velocity directly from pulse intervals
-        More accurate than RPM → velocity conversion
+        Calculate RPM from pulse timestamps
         """
         with self.lock:
-            if len(self.pulse_times) < 2:
-                return 0.0
-            pulses = list(self.pulse_times)
-        
-        intervals = [pulses[i+1] - pulses[i] for i in range(len(pulses)-1)]
-        
-        if not intervals:
-            return 0.0
-        
-        avg_interval = sum(intervals) / len(intervals)
-        
-        if avg_interval < 0.0001:
-            return 0.0
-        
-        # Distance per pulse = circumference / magnets
-        distance_per_pulse = wheel_circumference / MAGNETS_PER_REVOLUTION
-        
-        # Velocity = distance / time (EXACT from hardware timing)
-        velocity = distance_per_pulse / avg_interval
-        
-        return velocity
+            return self.rpm
+    
+    def get_rps(self):
+        """Get revolutions per second"""
+        with self.lock:
+            return self.rps
     
     def cleanup(self):
-        if RPI_AVAILABLE:
-            GPIO.cleanup(self.pin)
+        """Clean up resources"""
+        self.running = False
+        if self.sensor:
+            self.sensor.close()
 
 
 class AS5600Encoder:
@@ -168,3 +170,83 @@ class AS5600Encoder:
     def cleanup(self):
         if self.bus:
             self.bus.close()
+
+
+
+class FuelSensor:
+    """
+    Fuel level sensor using ADS1115 ADC
+    Reads analog voltage and converts to fuel percentage
+    """
+    
+    def __init__(self, channel=FUEL_ADC_CHANNEL, min_voltage=MIN_FUEL_VOLTAGE, max_voltage=MAX_FUEL_VOLTAGE):
+        self.channel = channel
+        self.min_voltage = min_voltage
+        self.max_voltage = max_voltage
+        self.fuel_level = 100.0
+        
+        if RPI_AVAILABLE:
+            try:
+                # Initialize I2C and ADS1115
+                i2c = busio.I2C(board.SCL, board.SDA)
+                ads = ADS.ADS1115(i2c)
+                
+                # Create analog input channel
+                if channel == 0:
+                    self.chan = AnalogIn(ads, ADS.P0)
+                elif channel == 1:
+                    self.chan = AnalogIn(ads, ADS.P1)
+                elif channel == 2:
+                    self.chan = AnalogIn(ads, ADS.P2)
+                elif channel == 3:
+                    self.chan = AnalogIn(ads, ADS.P3)
+                else:
+                    raise ValueError(f"Invalid ADC channel: {channel}")
+                
+                print(f"Fuel sensor initialized on ADC channel {channel}")
+            except Exception as e:
+                print(f"Error initializing fuel sensor: {e}")
+                self.chan = None
+        else:
+            print("Fuel sensor in simulation mode (no hardware)")
+            self.chan = None
+    
+    def read_fuel_level(self):
+        """
+        Read fuel level from ADC and convert to percentage
+        Returns: fuel level as percentage (0-100)
+        """
+        if not self.chan:
+            return 100.0  # Default value in simulation mode
+        
+        try:
+            # Read voltage from ADC
+            voltage = self.chan.voltage
+            
+            # Convert voltage to fuel percentage
+            # Assuming voltage decreases as fuel decreases
+            fuel = ((voltage - self.min_voltage) / (self.max_voltage - self.min_voltage)) * 100.0
+            
+            # Invert if needed (100% = full tank)
+            fuel = 100.0 - fuel
+            
+            # Clamp to 0-100 range
+            fuel = max(0.0, min(100.0, fuel))
+            
+            self.fuel_level = fuel
+            return fuel
+        
+        except Exception as e:
+            print(f"Error reading fuel sensor: {e}")
+            return self.fuel_level  # Return last known value
+    
+    def get_voltage(self):
+        """Get raw voltage reading"""
+        if not self.chan:
+            return 0.0
+        
+        try:
+            return self.chan.voltage
+        except Exception as e:
+            print(f"Error reading voltage: {e}")
+            return 0.0
